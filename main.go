@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func main() {
@@ -34,7 +36,10 @@ func Run(args []string) error {
 	} else if fs.NArg() == 0 {
 		fs.Usage()
 		return flag.ErrHelp
-	} else if fs.NArg() == 1 {
+	}
+
+	// Ensure either STDIN or args specify paths.
+	if terminal.IsTerminal(int(os.Stdin.Fd())) && fs.NArg() == 1 {
 		return errors.New("path required")
 	}
 
@@ -44,14 +49,26 @@ func Run(args []string) error {
 		log.SetOutput(ioutil.Discard)
 	}
 
-	// Ensure EDITOR is set.
-	editor := os.Getenv("EDITOR")
+	// Ensure BED_EDITOR or EDITOR is set.
+	editor := os.Getenv("BED_EDITOR")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
 	if editor == "" && !*dryRun {
 		return errors.New("EDITOR must be set")
 	}
 
 	// Extract arguments.
 	pattern, paths := fs.Arg(0), fs.Args()[1:]
+
+	// Read paths from stdin as well.
+	if !terminal.IsTerminal(int(os.Stdin.Fd())) {
+		buf, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, strings.Split(strings.TrimSpace(string(buf)), "\n")...)
+	}
 
 	// Parse regex.
 	re, err := regexp.Compile(pattern)
